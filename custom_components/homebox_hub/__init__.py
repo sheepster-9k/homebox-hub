@@ -122,7 +122,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomeBoxConfigEntry) -> b
 
             try:
                 new_options = await async_cleanup_removed_ha_device_link(
-                    hass, entry, api, event.data["device_id"]
+                    hass, current_entry, api, event.data["device_id"]
                 )
             except (
                 HomeBoxApiError,

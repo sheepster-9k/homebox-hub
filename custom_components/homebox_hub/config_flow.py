@@ -801,8 +801,6 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
                 created_item_id,
             )
             try:
-                api = _get_api_from_entry(self.hass, self.config_entry)
-                await api.async_authenticate()
                 await api.async_delete_item(created_item_id)
             except Exception:
                 _LOGGER.warning(
