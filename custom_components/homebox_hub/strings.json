@@ -1,0 +1,96 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Homebox",
+        "description": "Enter your Homebox instance details.",
+        "data": {
+          "host": "Homebox URL",
+          "username": "Username",
+          "password": "Password",
+          "name": "Integration name",
+          "area": "Area"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to Homebox. Check the URL and port.",
+      "invalid_auth": "Invalid Homebox credentials.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This Homebox instance is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "configure_llm": "Configure AI Assistant",
+          "create_hb_item_from_ha_device": "Create Homebox item from HA device",
+          "link_ha_device": "Link HA device to Homebox item",
+          "unlink_ha_device": "Unlink HA device",
+          "resync": "Refresh & clean stale links"
+        }
+      },
+      "configure_llm": {
+        "title": "AI Assistant Configuration",
+        "description": "Configure the LLM backend for the inventory conversation agent.",
+        "data": {
+          "llm_backend": "LLM Backend",
+          "llm_url": "LLM API URL",
+          "llm_model": "Model name"
+        }
+      },
+      "create_hb_item_from_ha_device": {
+        "title": "Select HA Device",
+        "description": "Choose a Home Assistant device to create a Homebox item from.",
+        "data": {
+          "ha_device_id": "Home Assistant device"
+        }
+      },
+      "create_hb_item_details": {
+        "title": "Homebox Item Details",
+        "description": "Review and edit the details for the new Homebox item.",
+        "data": {
+          "hb_item_name": "Item name",
+          "hb_item_manufacturer": "Manufacturer",
+          "hb_item_model_number": "Model number",
+          "hb_item_serial_number": "Serial number",
+          "hb_item_description": "Description",
+          "hb_item_purchase_price": "Purchase price",
+          "hb_item_image_url": "Image URL"
+        }
+      },
+      "link_ha_device": {
+        "title": "Link Homebox Item",
+        "description": "Select a device and a Homebox item to link together.",
+        "data": {
+          "ha_device_id": "Home Assistant device",
+          "hb_item_id": "Homebox item"
+        }
+      },
+      "unlink_ha_device": {
+        "title": "Unlink Device",
+        "description": "Select a linked device to unlink from Homebox.",
+        "data": {
+          "ha_device_id": "Linked device"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to Homebox.",
+      "already_linked": "This device or item is already linked.",
+      "not_linked": "Link not found — it may have been removed.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "no_devices_available": "No available Home Assistant devices found.",
+      "no_unlinked_items": "No unlinked tagged Homebox items found. Tag items with 'HomeAssistant' in Homebox first.",
+      "no_linked_devices": "No linked devices to unlink.",
+      "no_device_selected": "No device was selected.",
+      "cannot_connect": "Cannot connect to Homebox.",
+      "unknown": "An unexpected error occurred."
+    }
+  }
+}

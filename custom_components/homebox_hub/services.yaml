@@ -1,0 +1,80 @@
+search:
+  name: Search inventory
+  description: Search Homebox items by text query.
+  fields:
+    query:
+      name: Query
+      description: Text to search for in item names and descriptions.
+      required: true
+      example: "drill"
+      selector:
+        text:
+    config_entry_id:
+      name: Config entry ID
+      description: The Homebox Hub config entry to use.
+      required: false
+      selector:
+        config_entry:
+          integration: homebox_hub
+
+get_item:
+  name: Get item details
+  description: Get full details of a Homebox item by ID.
+  fields:
+    item_id:
+      name: Item ID
+      description: The Homebox item UUID.
+      required: true
+      selector:
+        text:
+    config_entry_id:
+      name: Config entry ID
+      required: false
+      selector:
+        config_entry:
+          integration: homebox_hub
+
+list_locations:
+  name: List locations
+  description: List all Homebox locations.
+  fields:
+    config_entry_id:
+      name: Config entry ID
+      required: false
+      selector:
+        config_entry:
+          integration: homebox_hub
+
+move_item:
+  name: Move item
+  description: Move a Homebox item to a different location.
+  fields:
+    item_id:
+      name: Item ID
+      description: The Homebox item UUID.
+      required: true
+      selector:
+        text:
+    location_id:
+      name: Location ID
+      description: The target location UUID.
+      required: true
+      selector:
+        text:
+    config_entry_id:
+      name: Config entry ID
+      required: false
+      selector:
+        config_entry:
+          integration: homebox_hub
+
+get_statistics:
+  name: Get statistics
+  description: Get Homebox inventory statistics.
+  fields:
+    config_entry_id:
+      name: Config entry ID
+      required: false
+      selector:
+        config_entry:
+          integration: homebox_hub

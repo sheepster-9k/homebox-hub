@@ -1,0 +1,12 @@
+{
+  "domain": "homebox_hub",
+  "name": "Homebox Hub",
+  "version": "1.0.0",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/sysadminsmedia/homebox",
+  "issue_tracker": "",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "requirements": []
+}
