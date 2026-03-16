@@ -43,6 +43,8 @@ from .const import (
     CONF_LLM_BACKEND,
     CONF_LLM_MODEL,
     CONF_LLM_URL,
+    DEFAULT_LLM_MODEL,
+    DEFAULT_LLM_URL,
     DEFAULT_NAME,
     DOMAIN,
     LLM_BACKEND_OLLAMA,
@@ -326,8 +328,8 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
             return self.async_create_entry(title="", data=new_options)
 
         current_backend = self.options.get(CONF_LLM_BACKEND, LLM_BACKEND_OLLAMA)
-        current_url = self.options.get(CONF_LLM_URL, "http://192.168.1.146:11434")
-        current_model = self.options.get(CONF_LLM_MODEL, "qwen3-vl:30b")
+        current_url = self.options.get(CONF_LLM_URL, DEFAULT_LLM_URL)
+        current_model = self.options.get(CONF_LLM_MODEL, DEFAULT_LLM_MODEL)
 
         schema = vol.Schema(
             {

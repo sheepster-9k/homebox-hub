@@ -478,9 +478,11 @@ async def _async_sync_location(
     api: HomeBoxApiClient,
     hb_item_id: str,
     area_name: str,
+    locations: list[dict[str, Any]] | None = None,
 ) -> None:
     """Set the Homebox item's location to match an HA area name."""
-    locations = await api.async_get_locations()
+    if locations is None:
+        locations = await api.async_get_locations()
     location_id: str | None = None
     for loc in locations:
         if loc.get("name") == area_name:
@@ -546,6 +548,9 @@ async def async_sync_all_linked_hb_item_locations(
     ha_device_to_hb_item, _ = get_link_maps(config_entry)
     dev_reg = dr.async_get(hass)
 
+    # Fetch locations once for all syncs
+    locations = await api.async_get_locations()
+
     for ha_device_id, hb_item_id in ha_device_to_hb_item.items():
         ha_device = dev_reg.async_get(ha_device_id)
         if ha_device is None:
@@ -557,7 +562,7 @@ async def async_sync_all_linked_hb_item_locations(
         area_name = _get_ha_device_area_name(hass, ha_device)
         if area_name:
             try:
-                await _async_sync_location(api, hb_item_id, area_name)
+                await _async_sync_location(api, hb_item_id, area_name, locations)
             except Exception:  # noqa: BLE001
                 _LOGGER.warning(
                     "Failed to sync location for device %s -> item %s",

@@ -36,6 +36,7 @@ from .linking import (
 )
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CONVERSATION]
+SERVICES: tuple[str, ...] = ("search", "get_item", "list_locations", "move_item", "get_statistics")
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -175,7 +176,7 @@ async def async_unload_entry(
             except KeyError:
                 pass  # Panel was never registered or already removed
             # Remove services
-            for svc in ("search", "get_item", "list_locations", "move_item", "get_statistics"):
+            for svc in SERVICES:
                 if hass.services.has_service(DOMAIN, svc):
                     hass.services.async_remove(DOMAIN, svc)
     return unload_ok

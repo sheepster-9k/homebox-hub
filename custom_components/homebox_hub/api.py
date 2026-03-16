@@ -319,8 +319,14 @@ class HomeBoxApiClient:
         )
         return _parse_items_response(data)
 
-    async def async_get_all_items(self) -> list[HomeBoxItemSummary]:
-        """Fetch all items, handling pagination automatically.
+    async def _async_paginate_items(
+        self,
+        extra_params: dict[str, Any] | None = None,
+    ) -> list[HomeBoxItemSummary]:
+        """Fetch all items matching extra_params, handling pagination.
+
+        Args:
+            extra_params: Additional query parameters (e.g. tags, q).
 
         Returns:
             Complete list of HomeBoxItemSummary from all pages.
@@ -330,11 +336,14 @@ class HomeBoxApiClient:
         page = 1
 
         while True:
-            data = await self._request(
-                "GET",
-                "v1/items",
-                params={"page": page, "pageSize": DEFAULT_PAGE_SIZE},
-            )
+            params: dict[str, Any] = {
+                "page": page,
+                "pageSize": DEFAULT_PAGE_SIZE,
+            }
+            if extra_params:
+                params.update(extra_params)
+
+            data = await self._request("GET", "v1/items", params=params)
             if not isinstance(data, dict):
                 raise HomeBoxApiError("Invalid items response")
 
@@ -347,6 +356,15 @@ class HomeBoxApiClient:
             page += 1
 
         return all_items
+
+    async def async_get_all_items(self) -> list[HomeBoxItemSummary]:
+        """Fetch all items, handling pagination automatically.
+
+        Returns:
+            Complete list of HomeBoxItemSummary from all pages.
+
+        """
+        return await self._async_paginate_items()
 
     async def async_get_item(self, item_id: str) -> dict[str, Any]:
         """Fetch a single item by ID.
@@ -412,23 +430,16 @@ class HomeBoxApiClient:
     async def async_search_items(
         self, query: str
     ) -> list[HomeBoxItemSummary]:
-        """Search for items matching a query string.
-
-        Fetches all items and filters by name containing the query.
+        """Search for items matching a query string using server-side search.
 
         Args:
-            query: Search string to match against item names.
+            query: Search string to match against items.
 
         Returns:
             List of matching HomeBoxItemSummary.
 
         """
-        all_items = await self.async_get_all_items()
-        query_lower = query.lower()
-        return [
-            item for item in all_items
-            if query_lower in item.name.lower()
-        ]
+        return await self._async_paginate_items(extra_params={"q": query})
 
     async def async_set_hb_item_location(
         self, item_id: str, location_id: str
@@ -499,31 +510,7 @@ class HomeBoxApiClient:
         if tag_id is None:
             return []
 
-        all_items: list[HomeBoxItemSummary] = []
-        page = 1
-
-        while True:
-            data = await self._request(
-                "GET",
-                "v1/items",
-                params={
-                    "page": page,
-                    "pageSize": DEFAULT_PAGE_SIZE,
-                    "tags": tag_id,
-                },
-            )
-            if not isinstance(data, dict):
-                raise HomeBoxApiError("Invalid items-by-tag response")
-
-            items = _parse_items_response(data)
-            all_items.extend(items)
-
-            total = int(data.get("total", 0))
-            if len(all_items) >= total or not items:
-                break
-            page += 1
-
-        return all_items
+        return await self._async_paginate_items(extra_params={"tags": tag_id})
 
     # ------------------------------------------------------------------
     # Locations

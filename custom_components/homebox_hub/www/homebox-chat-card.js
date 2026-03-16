@@ -33,7 +33,10 @@ class HomeboxChatCard extends HTMLElement {
   }
 
   _render() {
-    const title = this._config.title || "Inventory Search";
+    const title = (this._config.title || "Inventory Search")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
 
     this.shadowRoot.innerHTML = `
       <style>

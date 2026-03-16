@@ -1,4 +1,12 @@
 {
+  "entity": {
+    "sensor": {
+      "total_items": { "name": "Total Items" },
+      "total_locations": { "name": "Total Locations" },
+      "total_value": { "name": "Total Value" },
+      "homebox_link": { "name": "Homebox Link" }
+    }
+  },
   "config": {
     "step": {
       "user": {
@@ -80,6 +88,7 @@
     },
     "error": {
       "cannot_connect": "Cannot connect to Homebox.",
+      "invalid_auth": "Invalid Homebox credentials.",
       "already_linked": "This device or item is already linked.",
       "not_linked": "Link not found — it may have been removed.",
       "unknown": "An unexpected error occurred."

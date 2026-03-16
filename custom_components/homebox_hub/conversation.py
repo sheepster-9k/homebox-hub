@@ -19,17 +19,24 @@ from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_LLM_BACKEND, CONF_LLM_MODEL, CONF_LLM_URL, DOMAIN, LLM_BACKEND_OLLAMA, LLM_BACKEND_OPENCLAW
+from .const import (
+    DOMAIN,
+    CONF_LLM_BACKEND,
+    CONF_LLM_MODEL,
+    CONF_LLM_URL,
+    DEFAULT_LLM_MODEL,
+    DEFAULT_LLM_URL,
+    LLM_BACKEND_OPENCLAW,
+)
 from .coordinator import HomeBoxCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 _THINKING_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
-
-_DEFAULT_LLM_URL = "http://192.168.1.146:11434"
-_DEFAULT_LLM_MODEL = "qwen3-vl:30b"
 _LLM_TIMEOUT = aiohttp.ClientTimeout(total=120)
 
 _SYSTEM_PROMPT = (
@@ -66,16 +73,23 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._attr_unique_id = f"{config_entry.entry_id}_conversation"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, config_entry.entry_id)},
+            name=config_entry.title,
+            manufacturer="Homebox",
+            model="Inventory",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
     @property
     def _llm_url(self) -> str:
         """Return the configured LLM base URL."""
-        return self._config_entry.options.get(CONF_LLM_URL, _DEFAULT_LLM_URL)
+        return self._config_entry.options.get(CONF_LLM_URL, DEFAULT_LLM_URL)
 
     @property
     def _llm_model(self) -> str:
         """Return the configured LLM model name."""
-        return self._config_entry.options.get(CONF_LLM_MODEL, _DEFAULT_LLM_MODEL)
+        return self._config_entry.options.get(CONF_LLM_MODEL, DEFAULT_LLM_MODEL)
 
     # ------------------------------------------------------------------
     # Conversation handling
@@ -87,12 +101,19 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
     ) -> conversation.ConversationResult:
         """Process the user's natural language query."""
         query = user_input.text
+        api = self._coordinator.api
 
+        # Fetch once per conversation turn, reuse for both LLM and fallback
         try:
-            context = await self._build_inventory_context(query)
+            all_items = await api.async_get_all_items()
+            locations = await api.async_get_locations()
         except Exception:
-            _LOGGER.exception("Failed to fetch inventory context from Homebox")
-            context = "Inventory data is temporarily unavailable."
+            _LOGGER.exception("Failed to fetch inventory data from Homebox")
+            all_items = []
+            locations = []
+
+        matched = _search_items(all_items, query)
+        context = _build_inventory_context(matched, all_items, locations)
 
         # Try LLM first; fall back to keyword search if unavailable.
         try:
@@ -104,7 +125,8 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
             _LOGGER.debug(
                 "LLM unavailable, falling back to keyword search", exc_info=True
             )
-            response_text = await self._keyword_fallback(query)
+            # Reuse already-fetched data instead of re-fetching
+            response_text = _keyword_response(matched, len(all_items), len(locations))
 
         intent_response = conversation.IntentResponse(language=user_input.language)
         intent_response.async_set_speech(response_text)
@@ -115,114 +137,41 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
         )
 
     # ------------------------------------------------------------------
-    # Inventory context builder
-    # ------------------------------------------------------------------
-
-    async def _build_inventory_context(self, query: str) -> str:
-        """Build a concise inventory context string for the LLM."""
-        api = self._coordinator.api
-        parts: list[str] = []
-
-        # Locations
-        locations = await api.async_get_locations()
-        location_names = [loc.get("name", "Unknown") for loc in locations]
-        location_map: dict[str, str] = {
-            loc.get("id", ""): loc.get("name", "Unknown") for loc in locations
-        }
-        if location_names:
-            parts.append(f"Locations: {', '.join(location_names)}")
-
-        # All items (used for search and stats)
-        all_items = await api.async_get_all_items()
-
-        # Search for items matching the query
-        matched = _search_items(all_items, query, location_map)
-        if matched:
-            formatted = [
-                f"{name} ({loc})" for name, loc in matched
-            ]
-            parts.append(f"Found items: {', '.join(formatted)}")
-
-        # Basic statistics
-        parts.append(
-            f"Total: {len(all_items)} items across {len(locations)} locations"
-        )
-
-        return "\n".join(parts)
-
-    # ------------------------------------------------------------------
-    # LLM query
+    # LLM query (unified Ollama / OpenClaw)
     # ------------------------------------------------------------------
 
     async def _query_llm(self, system_prompt: str, user_message: str) -> str:
         """Send a chat completion request to the configured LLM endpoint."""
         session = async_get_clientsession(self.hass)
-        backend = self._config_entry.options.get(CONF_LLM_BACKEND, LLM_BACKEND_OLLAMA)
+        backend = self._config_entry.options.get(CONF_LLM_BACKEND)
+        is_openclaw = backend == LLM_BACKEND_OPENCLAW
 
-        if backend == LLM_BACKEND_OPENCLAW:
-            # OpenClaw uses OpenAI-compatible format
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+
+        if is_openclaw:
             url = f"{self._llm_url.rstrip('/')}/v1/chat/completions"
-            payload: dict[str, Any] = {
-                "model": self._llm_model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-            }
-            async with session.post(url, json=payload, timeout=_LLM_TIMEOUT) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+            payload: dict[str, Any] = {"model": self._llm_model, "messages": messages}
+        else:
+            url = f"{self._llm_url.rstrip('/')}/api/chat"
+            payload = {"model": self._llm_model, "messages": messages, "stream": False}
+
+        async with session.post(url, json=payload, timeout=_LLM_TIMEOUT) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+
+        if is_openclaw:
             content: str = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         else:
-            # Ollama format
-            url = f"{self._llm_url.rstrip('/')}/api/chat"
-            payload = {
-                "model": self._llm_model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-                "stream": False,
-            }
-            async with session.post(url, json=payload, timeout=_LLM_TIMEOUT) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
             content = data.get("message", {}).get("content", "")
 
         if not content:
             raise ValueError("Empty response from LLM")
 
         # Strip <think>...</think> blocks emitted by qwen3 models.
-        content = _THINKING_RE.sub("", content).strip()
-        return content
-
-    # ------------------------------------------------------------------
-    # Keyword fallback (no LLM)
-    # ------------------------------------------------------------------
-
-    async def _keyword_fallback(self, query: str) -> str:
-        """Return a simple keyword-matched answer without an LLM."""
-        api = self._coordinator.api
-
-        try:
-            locations = await api.async_get_locations()
-            location_map: dict[str, str] = {
-                loc.get("id", ""): loc.get("name", "Unknown") for loc in locations
-            }
-            all_items = await api.async_get_all_items()
-        except Exception:
-            _LOGGER.exception("Failed to query Homebox for fallback")
-            return "Sorry, I couldn't reach the inventory system right now."
-
-        matched = _search_items(all_items, query, location_map)
-        if matched:
-            lines = [f"- {name} ({loc})" for name, loc in matched]
-            return f"I found {len(matched)} matching item(s):\n" + "\n".join(lines)
-
-        return (
-            f"I couldn't find any items matching your query. "
-            f"There are {len(all_items)} items across {len(locations)} locations."
-        )
+        return _THINKING_RE.sub("", content).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -230,37 +179,54 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
 # ---------------------------------------------------------------------------
 
 
+def _build_inventory_context(
+    matched: list[tuple[str, str]],
+    all_items: list[Any],
+    locations: list[dict[str, Any]],
+) -> str:
+    """Build a concise inventory context string for the LLM."""
+    parts: list[str] = []
+
+    location_names = [loc.get("name", "Unknown") for loc in locations]
+    if location_names:
+        parts.append(f"Locations: {', '.join(location_names)}")
+
+    if matched:
+        formatted = [f"{name} ({loc})" for name, loc in matched]
+        parts.append(f"Found items: {', '.join(formatted)}")
+
+    parts.append(
+        f"Total: {len(all_items)} items across {len(locations)} locations"
+    )
+    return "\n".join(parts)
+
+
 def _search_items(
     items: list[Any],
     query: str,
-    location_map: dict[str, str],
 ) -> list[tuple[str, str]]:
     """Return (name, location_name) pairs for items matching the query."""
     keywords = query.lower().split()
     results: list[tuple[str, str]] = []
 
     for item in items:
-        name: str = item.name if hasattr(item, "name") else str(item)
-        name_lower = name.lower()
-
-        if any(kw in name_lower for kw in keywords):
-            # Resolve location from the full item data if available
-            loc_name = _resolve_location(item, location_map)
-            results.append((name, loc_name))
+        if any(kw in item.name.lower() for kw in keywords):
+            results.append((item.name, item.location_name or "Unknown"))
 
     return results
 
 
-def _resolve_location(item: Any, location_map: dict[str, str]) -> str:
-    """Best-effort extraction of location name from an item."""
-    if hasattr(item, "location_name") and item.location_name:
-        return item.location_name
-    if hasattr(item, "location_id") and item.location_id:
-        return location_map.get(item.location_id, "Unknown")
-    if hasattr(item, "location"):
-        loc = item.location
-        if isinstance(loc, dict):
-            return loc.get("name", "Unknown")
-        if isinstance(loc, str) and loc in location_map:
-            return location_map[loc]
-    return "Unknown"
+def _keyword_response(
+    matched: list[tuple[str, str]],
+    total_items: int,
+    total_locations: int,
+) -> str:
+    """Format a plain-text response from keyword-matched items."""
+    if matched:
+        lines = [f"- {name} ({loc})" for name, loc in matched]
+        return f"I found {len(matched)} matching item(s):\n" + "\n".join(lines)
+
+    return (
+        f"I couldn't find any items matching your query. "
+        f"There are {total_items} items across {total_locations} locations."
+    )
