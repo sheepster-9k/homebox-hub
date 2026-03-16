@@ -33,13 +33,16 @@ ALLOWED_IMAGE_CONTENT_TYPES = frozenset(
     {"image/jpeg", "image/png", "image/gif", "image/webp"}
 )
 DEFAULT_PAGE_SIZE = 50
+MAX_PAGES = 200  # Safety cap: 200 pages * 50 = 10,000 items max
 MAX_RETRIES = 1
 RETRY_DELAY = 1.0  # seconds
 MAX_ERROR_BODY_LENGTH = 200
 
 
 def _sanitize_for_log(text: str) -> str:
-    """Remove newlines and control characters to prevent log injection."""
+    """Remove newlines, control chars, and ANSI escapes to prevent log injection."""
+    import re
+    text = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
     return text.replace("\n", " ").replace("\r", " ")[:500]
 
 
@@ -124,22 +127,29 @@ class HomeBoxImageContentTypeError(HomeBoxApiError):
 
 
 class HomeBoxApiClient:
-    """Async client for the Homebox REST API."""
+    """Async client for the Homebox REST API.
+
+    Supports two auth modes:
+    - **Login mode** (default): username + password, auto-refreshes token on 401.
+    - **Token mode**: static bearer token, no refresh.
+    """
 
     def __init__(
         self,
         hass: HomeAssistant,
         host: str,
-        username: str,
-        password: str,
+        username: str = "",
+        password: str = "",
+        token: str = "",
     ) -> None:
         """Initialize the API client.
 
         Args:
             hass: Home Assistant instance.
             host: Homebox server URL (e.g. "http://homebox:7745").
-            username: Homebox username.
-            password: Homebox password.
+            username: Homebox username (login mode).
+            password: Homebox password (login mode).
+            token: Static bearer token (token mode).
 
         """
         self._hass = hass
@@ -147,7 +157,8 @@ class HomeBoxApiClient:
         self._username = username
         self._password = password
         self._session: aiohttp.ClientSession = async_get_clientsession(hass)
-        self._token: str | None = None
+        self._token: str | None = token or None
+        self._uses_static_token: bool = bool(token)
 
     # ------------------------------------------------------------------
     # Properties
@@ -400,6 +411,11 @@ class HomeBoxApiClient:
 
             total = int(data.get("total", 0))
             if len(all_items) >= total or not items:
+                break
+            if page >= MAX_PAGES:
+                _LOGGER.warning(
+                    "Pagination cap reached (%d pages); truncating", MAX_PAGES
+                )
                 break
             page += 1
 
@@ -656,7 +672,7 @@ class HomeBoxApiClient:
             List of tag dicts.
 
         """
-        data = await self._request("GET", "v1/tags")
+        data = await self._request("GET", "v1/labels")
         if not isinstance(data, list):
             raise HomeBoxApiError("Invalid tags response")
         return data
@@ -671,7 +687,7 @@ class HomeBoxApiClient:
             Tag dict.
 
         """
-        data = await self._request("GET", f"v1/tags/{tag_id}")
+        data = await self._request("GET", f"v1/labels/{tag_id}")
         if not isinstance(data, dict):
             raise HomeBoxApiError(f"Invalid tag response for {tag_id}")
         return data
@@ -688,7 +704,7 @@ class HomeBoxApiClient:
             Created tag dict.
 
         """
-        data = await self._request("POST", "v1/tags", json=payload)
+        data = await self._request("POST", "v1/labels", json=payload)
         if not isinstance(data, dict):
             raise HomeBoxApiError("Invalid create-tag response")
         return data
@@ -700,7 +716,7 @@ class HomeBoxApiClient:
             tag_id: The Homebox tag UUID.
 
         """
-        await self._request("DELETE", f"v1/tags/{tag_id}")
+        await self._request("DELETE", f"v1/labels/{tag_id}")
 
     async def async_ensure_tag(self, tag_name: str) -> dict[str, Any]:
         """Return an existing tag by name, creating it if necessary.
@@ -746,7 +762,10 @@ class HomeBoxApiClient:
         _validate_image_url(image_url)
 
         try:
-            async with self._session.get(image_url) as resp:
+            # Disable redirects to prevent SSRF via open redirect
+            async with self._session.get(
+                image_url, allow_redirects=False
+            ) as resp:
                 if resp.status != 200:
                     raise HomeBoxImageDownloadError(
                         f"Failed to download image: HTTP {resp.status}"
@@ -767,11 +786,12 @@ class HomeBoxApiClient:
                         f"(max {MAX_IMAGE_SIZE} bytes)"
                     )
 
-                image_data = await resp.read()
+                # Read with size cap to prevent memory exhaustion
+                # when Content-Length is absent or spoofed
+                image_data = await resp.content.read(MAX_IMAGE_SIZE + 1)
                 if len(image_data) > MAX_IMAGE_SIZE:
                     raise HomeBoxImageTooLargeError(
-                        f"Image too large: {len(image_data)} bytes "
-                        f"(max {MAX_IMAGE_SIZE} bytes)"
+                        f"Image too large (max {MAX_IMAGE_SIZE} bytes)"
                     )
 
         except aiohttp.ClientError as err:

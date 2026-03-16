@@ -4,6 +4,9 @@ from datetime import timedelta
 
 DOMAIN = "homebox_hub"
 CONF_AREA = "area"
+CONF_AUTH_MODE = "auth_mode"
+AUTH_MODE_LOGIN = "login"
+AUTH_MODE_TOKEN = "token"
 DEFAULT_NAME = "Homebox Hub"
 
 # Linking

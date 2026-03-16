@@ -29,6 +29,7 @@ from .api import (
     HomeBoxInvalidImageUrlError,
     normalize_homebox_host,
 )
+from .item_fields import build_item_update_payload, extract_item_fields
 from .const import (
     CONF_AREA,
     CONF_HA_DEVICE_ID,
@@ -703,32 +704,28 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
 
             # Fetch the full item so we can build a proper update payload
             full_item = await api.async_get_item(created_item_id)
+            fields = extract_item_fields(full_item)
+            update_payload = build_item_update_payload(full_item, fields)
 
-            # Build update payload with all details
-            update_payload = dict(full_item)
+            # Set user-provided details
             update_payload["name"] = item_name
 
-            # Set manufacturer
             manufacturer = user_input.get(CONF_HB_ITEM_MANUFACTURER, "")
             if manufacturer:
                 update_payload["manufacturer"] = manufacturer
 
-            # Set model number
             model_number = user_input.get(CONF_HB_ITEM_MODEL_NUMBER, "")
             if model_number:
                 update_payload["modelNumber"] = model_number
 
-            # Set serial number
             serial_number = user_input.get(CONF_HB_ITEM_SERIAL_NUMBER, "")
             if serial_number:
                 update_payload["serialNumber"] = serial_number
 
-            # Set description
             description = user_input.get(CONF_HB_ITEM_DESCRIPTION, "")
             if description:
                 update_payload["description"] = description
 
-            # Set purchase price
             purchase_price = user_input.get(CONF_HB_ITEM_PURCHASE_PRICE, "")
             if purchase_price:
                 try:
@@ -738,12 +735,11 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
                         "Invalid purchase price '%s', skipping", purchase_price
                     )
 
-            # Ensure the tag is in the labels list
-            existing_labels = update_payload.get("labels", []) or []
-            tag_ids = {label.get("id") for label in existing_labels}
-            if tag_id not in tag_ids:
-                existing_labels.append({"id": tag_id, "name": "HomeAssistant"})
-                update_payload["labels"] = existing_labels
+            # Ensure the HomeAssistant label is in labelIds
+            existing_label_ids: list[str] = update_payload.get("labelIds", [])
+            if tag_id not in existing_label_ids:
+                existing_label_ids.append(tag_id)
+                update_payload["labelIds"] = existing_label_ids
 
             await api.async_update_item(created_item_id, update_payload)
 

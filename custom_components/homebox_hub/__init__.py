@@ -327,7 +327,7 @@ def _async_register_panels(
     if "homebox" in hass.data.get("frontend_panels", {}):
         return
     homebox_url = entry.data.get(CONF_HOST, "")
-    if homebox_url:
+    if homebox_url and homebox_url.startswith(("http://", "https://")):
         async_register_built_in_panel(
             hass,
             "iframe",
@@ -335,5 +335,5 @@ def _async_register_panels(
             "mdi:package-variant",
             "homebox",
             {"url": homebox_url},
-            require_admin=False,
+            require_admin=True,
         )

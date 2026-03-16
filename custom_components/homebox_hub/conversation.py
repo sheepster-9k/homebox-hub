@@ -166,6 +166,10 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
 
     async def _query_llm(self, system_prompt: str, user_message: str) -> str:
         """Send a chat completion request to the configured LLM endpoint."""
+        llm_url = self._llm_url
+        if not llm_url.startswith(("http://", "https://")):
+            raise ValueError("LLM URL must use http:// or https:// scheme")
+
         session = async_get_clientsession(self.hass)
         backend = self._config_entry.options.get(CONF_LLM_BACKEND)
         is_openclaw = backend == LLM_BACKEND_OPENCLAW
@@ -176,10 +180,10 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
         ]
 
         if is_openclaw:
-            url = f"{self._llm_url.rstrip('/')}/v1/chat/completions"
+            url = f"{llm_url.rstrip('/')}/v1/chat/completions"
             payload: dict[str, Any] = {"model": self._llm_model, "messages": messages}
         else:
-            url = f"{self._llm_url.rstrip('/')}/api/chat"
+            url = f"{llm_url.rstrip('/')}/api/chat"
             payload = {"model": self._llm_model, "messages": messages, "stream": False}
 
         async with session.post(url, json=payload, timeout=_LLM_TIMEOUT) as resp:

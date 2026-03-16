@@ -154,11 +154,21 @@ class HomeBoxLinkedDeviceSensor(
         super().__init__(coordinator)
         self._ha_device_id = ha_device_id
         self._hb_item_id = hb_item_id
+        self._config_entry = config_entry
         self._attr_unique_id = f"{ha_device_id}_homebox_link"
         self._attr_translation_key = "homebox_link"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, config_entry.entry_id)},
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Attach this sensor to the linked HA device, not the service device."""
+        from homeassistant.helpers import device_registry as dr
+
+        dev_reg = dr.async_get(self.hass)
+        device = dev_reg.async_get(self._ha_device_id)
+        if device is None:
+            return None
+        # Use the device's existing identifiers so HA attaches us to it
+        return DeviceInfo(identifiers=device.identifiers)
 
     @property
     def native_value(self) -> str | None:
