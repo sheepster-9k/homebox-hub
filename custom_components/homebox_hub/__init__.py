@@ -29,6 +29,7 @@ from .const import (
     CONF_HB_ITEM_TO_HA_DEVICE,
     CONF_LINKS,
     DOMAIN,
+    MAX_QUERY_LENGTH,
 )
 from .coordinator import HomeBoxConfigEntry, HomeBoxCoordinator
 from .linking import (
@@ -40,7 +41,6 @@ from .linking import (
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CONVERSATION]
 SERVICES: tuple[str, ...] = ("search", "get_item", "list_locations", "move_item", "get_statistics")
 _LOGGER = logging.getLogger(__name__)
-MAX_QUERY_LENGTH = 500
 
 
 def _validate_uuid(value: str) -> str:

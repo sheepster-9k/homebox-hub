@@ -155,6 +155,45 @@ def _get_linked_ha_devices(
     return devices
 
 
+def _build_item_details_schema(
+    defaults: dict[str, Any] | None = None,
+) -> vol.Schema:
+    """Build the item-details form schema used by the create-item wizard."""
+    defaults = defaults or {}
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_HB_ITEM_NAME,
+                default=defaults.get(CONF_HB_ITEM_NAME, ""),
+            ): str,
+            vol.Optional(
+                CONF_HB_ITEM_MANUFACTURER,
+                default=defaults.get(CONF_HB_ITEM_MANUFACTURER, ""),
+            ): str,
+            vol.Optional(
+                CONF_HB_ITEM_MODEL_NUMBER,
+                default=defaults.get(CONF_HB_ITEM_MODEL_NUMBER, ""),
+            ): str,
+            vol.Optional(
+                CONF_HB_ITEM_SERIAL_NUMBER,
+                default=defaults.get(CONF_HB_ITEM_SERIAL_NUMBER, ""),
+            ): str,
+            vol.Optional(
+                CONF_HB_ITEM_DESCRIPTION,
+                default=defaults.get(CONF_HB_ITEM_DESCRIPTION, ""),
+            ): str,
+            vol.Optional(
+                CONF_HB_ITEM_PURCHASE_PRICE,
+                default=defaults.get(CONF_HB_ITEM_PURCHASE_PRICE, ""),
+            ): str,
+            vol.Optional(
+                CONF_HB_ITEM_IMAGE_URL,
+                default=defaults.get(CONF_HB_ITEM_IMAGE_URL, ""),
+            ): str,
+        }
+    )
+
+
 def _fuzzy_best_match(
     query: str,
     candidates: dict[str, str],
@@ -637,39 +676,9 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
         except Exception:
             _LOGGER.debug("Could not fetch items for fuzzy matching")
 
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_HB_ITEM_NAME,
-                    default=defaults.get(CONF_HB_ITEM_NAME, ""),
-                ): str,
-                vol.Optional(
-                    CONF_HB_ITEM_MANUFACTURER,
-                    default=defaults.get(CONF_HB_ITEM_MANUFACTURER, ""),
-                ): str,
-                vol.Optional(
-                    CONF_HB_ITEM_MODEL_NUMBER,
-                    default=defaults.get(CONF_HB_ITEM_MODEL_NUMBER, ""),
-                ): str,
-                vol.Optional(
-                    CONF_HB_ITEM_SERIAL_NUMBER,
-                    default=defaults.get(CONF_HB_ITEM_SERIAL_NUMBER, ""),
-                ): str,
-                vol.Optional(
-                    CONF_HB_ITEM_DESCRIPTION, default=""
-                ): str,
-                vol.Optional(
-                    CONF_HB_ITEM_PURCHASE_PRICE, default=""
-                ): str,
-                vol.Optional(
-                    CONF_HB_ITEM_IMAGE_URL, default=""
-                ): str,
-            }
-        )
-
         return self.async_show_form(
             step_id="create_hb_item_details",
-            data_schema=schema,
+            data_schema=_build_item_details_schema(defaults),
             errors=errors,
         )
 
@@ -810,37 +819,6 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
         # Show the details form again with errors
         return self.async_show_form(
             step_id="create_hb_item_details",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_HB_ITEM_NAME,
-                        default=user_input.get(CONF_HB_ITEM_NAME, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_HB_ITEM_MANUFACTURER,
-                        default=user_input.get(CONF_HB_ITEM_MANUFACTURER, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_HB_ITEM_MODEL_NUMBER,
-                        default=user_input.get(CONF_HB_ITEM_MODEL_NUMBER, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_HB_ITEM_SERIAL_NUMBER,
-                        default=user_input.get(CONF_HB_ITEM_SERIAL_NUMBER, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_HB_ITEM_DESCRIPTION,
-                        default=user_input.get(CONF_HB_ITEM_DESCRIPTION, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_HB_ITEM_PURCHASE_PRICE,
-                        default=user_input.get(CONF_HB_ITEM_PURCHASE_PRICE, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_HB_ITEM_IMAGE_URL,
-                        default=user_input.get(CONF_HB_ITEM_IMAGE_URL, ""),
-                    ): str,
-                }
-            ),
+            data_schema=_build_item_details_schema(user_input),
             errors=errors,
         )

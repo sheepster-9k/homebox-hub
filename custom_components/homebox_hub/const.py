@@ -37,5 +37,6 @@ CONF_LLM_URL = "llm_url"
 CONF_LLM_MODEL = "llm_model"
 LLM_BACKEND_OLLAMA = "ollama"
 LLM_BACKEND_OPENCLAW = "openclaw"
-DEFAULT_LLM_URL = "http://192.168.1.146:11434"
+MAX_QUERY_LENGTH = 500
+DEFAULT_LLM_URL = "http://localhost:11434"
 DEFAULT_LLM_MODEL = "qwen3-vl:30b"

@@ -9,6 +9,7 @@ fallback produces a direct answer from the inventory data.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -32,6 +33,7 @@ from .const import (
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_URL,
     LLM_BACKEND_OPENCLAW,
+    MAX_QUERY_LENGTH,
 )
 from .coordinator import HomeBoxCoordinator
 
@@ -39,7 +41,6 @@ _LOGGER = logging.getLogger(__name__)
 
 _THINKING_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 _LLM_TIMEOUT = aiohttp.ClientTimeout(total=120)
-_MAX_QUERY_LENGTH = 500
 _RATE_LIMIT_SECONDS = 2.0  # minimum seconds between queries
 
 _SYSTEM_PROMPT = (
@@ -122,15 +123,17 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
         self._last_query_time = now
 
         # Truncate excessively long queries
-        if len(query) > _MAX_QUERY_LENGTH:
-            query = query[:_MAX_QUERY_LENGTH]
+        if len(query) > MAX_QUERY_LENGTH:
+            query = query[:MAX_QUERY_LENGTH]
 
         api = self._coordinator.api
 
-        # Fetch once per conversation turn, reuse for both LLM and fallback
+        # Use coordinator's cached data for totals; only do a targeted search
         try:
-            all_items = await api.async_get_all_items()
-            locations = await api.async_get_locations()
+            all_items, locations = await asyncio.gather(
+                api.async_get_all_items(),
+                api.async_get_locations(),
+            )
         except Exception:
             _LOGGER.exception("Failed to fetch inventory data from Homebox")
             all_items = []

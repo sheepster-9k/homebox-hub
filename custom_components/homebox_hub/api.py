@@ -39,10 +39,12 @@ RETRY_DELAY = 1.0  # seconds
 MAX_ERROR_BODY_LENGTH = 200
 
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
 def _sanitize_for_log(text: str) -> str:
     """Remove newlines, control chars, and ANSI escapes to prevent log injection."""
-    import re
-    text = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
+    text = _ANSI_ESCAPE_RE.sub("", text)
     return text.replace("\n", " ").replace("\r", " ")[:500]
 
 

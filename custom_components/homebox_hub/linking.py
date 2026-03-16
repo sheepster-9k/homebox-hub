@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -504,6 +505,11 @@ async def _async_sync_location(
         return
 
     hb_item = await api.async_get_item(hb_item_id)
+
+    # Skip the PUT if the item is already at the target location
+    if hb_item.get("location", {}).get("id") == location_id:
+        return
+
     fields = extract_item_fields(hb_item)
     payload = build_item_update_payload(hb_item, fields)
     payload["locationId"] = location_id
@@ -539,6 +545,9 @@ async def async_sync_linked_hb_item_location(
         )
 
 
+_SYNC_CONCURRENCY = 4  # max parallel location syncs
+
+
 async def async_sync_all_linked_hb_item_locations(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -551,6 +560,22 @@ async def async_sync_all_linked_hb_item_locations(
     # Fetch locations once for all syncs
     locations = await api.async_get_locations()
 
+    sem = asyncio.Semaphore(_SYNC_CONCURRENCY)
+
+    async def _sync_one(
+        ha_device_id: str, hb_item_id: str, area: str,
+    ) -> None:
+        async with sem:
+            try:
+                await _async_sync_location(api, hb_item_id, area, locations)
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning(
+                    "Failed to sync location for device %s -> item %s",
+                    ha_device_id,
+                    hb_item_id,
+                )
+
+    tasks: list[asyncio.Task[None]] = []
     for ha_device_id, hb_item_id in ha_device_to_hb_item.items():
         ha_device = dev_reg.async_get(ha_device_id)
         if ha_device is None:
@@ -561,14 +586,12 @@ async def async_sync_all_linked_hb_item_locations(
 
         area_name = _get_ha_device_area_name(hass, ha_device)
         if area_name:
-            try:
-                await _async_sync_location(api, hb_item_id, area_name, locations)
-            except Exception:  # noqa: BLE001
-                _LOGGER.warning(
-                    "Failed to sync location for device %s -> item %s",
-                    ha_device_id,
-                    hb_item_id,
-                )
+            tasks.append(
+                asyncio.create_task(_sync_one(ha_device_id, hb_item_id, area_name))
+            )
+
+    if tasks:
+        await asyncio.gather(*tasks)
 
 
 async def async_cleanup_removed_ha_device_link(
