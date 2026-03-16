@@ -7,9 +7,10 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components.frontend import async_register_built_in_panel
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
-from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
+from homeassistant.core import Event, HomeAssistant, ServiceCall, SupportsResponse, callback
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 
 from .api import (
@@ -135,9 +136,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomeBoxConfigEntry) -> b
         )
     )
 
-    # Reload on options change
-    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
-
     # Store coordinator
     entry.runtime_data = coordinator
 
@@ -150,6 +148,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomeBoxConfigEntry) -> b
     # Register sidebar panels
     _async_register_panels(hass, entry)
 
+    # Reload on options change (must be after runtime_data and platform setup)
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+
     return True
 
 
@@ -157,7 +158,20 @@ async def async_unload_entry(
     hass: HomeAssistant, entry: HomeBoxConfigEntry
 ) -> bool:
     """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        # Remove panel
+        if "homebox" in hass.data.get("frontend_panels", {}):
+            hass.components.frontend.async_remove_panel("homebox")
+        # Unregister services if this is the last loaded entry
+        remaining = [
+            e for e in hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != entry.entry_id and e.state is ConfigEntryState.LOADED
+        ]
+        if not remaining:
+            for svc in ("search", "get_item", "list_locations", "move_item", "get_statistics"):
+                hass.services.async_remove(DOMAIN, svc)
+    return unload_ok
 
 
 async def _async_reload_entry(
@@ -231,6 +245,7 @@ async def _async_register_services(
                 vol.Optional("config_entry_id"): cv.string,
             }
         ),
+        supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
         DOMAIN,
@@ -242,6 +257,7 @@ async def _async_register_services(
                 vol.Optional("config_entry_id"): cv.string,
             }
         ),
+        supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
         DOMAIN,
@@ -250,6 +266,7 @@ async def _async_register_services(
         schema=vol.Schema(
             {vol.Optional("config_entry_id"): cv.string}
         ),
+        supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
         DOMAIN,
@@ -270,6 +287,7 @@ async def _async_register_services(
         schema=vol.Schema(
             {vol.Optional("config_entry_id"): cv.string}
         ),
+        supports_response=SupportsResponse.OPTIONAL,
     )
 
 
@@ -280,7 +298,8 @@ def _async_register_panels(
     """Register sidebar panels for Homebox."""
     homebox_url = entry.data.get(CONF_HOST, "")
     if homebox_url:
-        hass.components.frontend.async_register_built_in_panel(
+        async_register_built_in_panel(
+            hass,
             "iframe",
             "Homebox",
             "mdi:package-variant",

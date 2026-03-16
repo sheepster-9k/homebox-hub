@@ -556,8 +556,6 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Wizard step 1: select an HA device to create a Homebox item for."""
-        errors: dict[str, str] = {}
-
         if user_input is not None:
             self._selected_ha_device_id = user_input[CONF_HA_DEVICE_ID]
             return await self.async_step_create_hb_item_details()
@@ -585,7 +583,6 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
         return self.async_show_form(
             step_id="create_hb_item_from_ha_device",
             data_schema=schema,
-            errors=errors,
         )
 
     # ------------------------------------------------------------------

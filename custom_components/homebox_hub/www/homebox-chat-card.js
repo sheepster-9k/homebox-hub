@@ -177,7 +177,6 @@ class HomeboxChatCard extends HTMLElement {
 
       const response =
         result?.response?.speech?.plain?.speech ||
-        result?.response?.speech?.plain ||
         "No response";
 
       this._messages.push({ role: "assistant", text: response });

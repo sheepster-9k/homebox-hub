@@ -21,7 +21,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_LLM_BACKEND, CONF_LLM_MODEL, CONF_LLM_URL, DOMAIN, LLM_BACKEND_OLLAMA
+from .const import CONF_LLM_BACKEND, CONF_LLM_MODEL, CONF_LLM_URL, DOMAIN, LLM_BACKEND_OLLAMA, LLM_BACKEND_OPENCLAW
 from .coordinator import HomeBoxCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -157,21 +157,38 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
     async def _query_llm(self, system_prompt: str, user_message: str) -> str:
         """Send a chat completion request to the configured LLM endpoint."""
         session = async_get_clientsession(self.hass)
-        url = f"{self._llm_url.rstrip('/')}/api/chat"
-        payload: dict[str, Any] = {
-            "model": self._llm_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            "stream": False,
-        }
+        backend = self._config_entry.options.get(CONF_LLM_BACKEND, LLM_BACKEND_OLLAMA)
 
-        async with session.post(url, json=payload, timeout=_LLM_TIMEOUT) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
+        if backend == LLM_BACKEND_OPENCLAW:
+            # OpenClaw uses OpenAI-compatible format
+            url = f"{self._llm_url.rstrip('/')}/v1/chat/completions"
+            payload: dict[str, Any] = {
+                "model": self._llm_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+            }
+            async with session.post(url, json=payload, timeout=_LLM_TIMEOUT) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+            content: str = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        else:
+            # Ollama format
+            url = f"{self._llm_url.rstrip('/')}/api/chat"
+            payload = {
+                "model": self._llm_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                "stream": False,
+            }
+            async with session.post(url, json=payload, timeout=_LLM_TIMEOUT) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+            content = data.get("message", {}).get("content", "")
 
-        content: str = data.get("message", {}).get("content", "")
         if not content:
             raise ValueError("Empty response from LLM")
 
@@ -236,8 +253,10 @@ def _search_items(
 
 def _resolve_location(item: Any, location_map: dict[str, str]) -> str:
     """Best-effort extraction of location name from an item."""
-    # HomeBoxItemSummary doesn't carry location directly — check raw fields
-    # or fall back to "Unknown".
+    if hasattr(item, "location_name") and item.location_name:
+        return item.location_name
+    if hasattr(item, "location_id") and item.location_id:
+        return location_map.get(item.location_id, "Unknown")
     if hasattr(item, "location"):
         loc = item.location
         if isinstance(loc, dict):

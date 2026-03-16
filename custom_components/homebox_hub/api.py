@@ -814,11 +814,19 @@ def _parse_items_response(
         if not item_id or not name:
             _LOGGER.warning("Skipping item missing id or name: %s", item)
             continue
+        location = item.get("location")
+        loc_id = None
+        loc_name = None
+        if isinstance(location, dict):
+            loc_id = location.get("id")
+            loc_name = location.get("name")
         results.append(
             HomeBoxItemSummary(
                 item_id=str(item_id),
                 name=str(name),
                 fields=item.get("fields"),
+                location_id=str(loc_id) if loc_id else None,
+                location_name=str(loc_name) if loc_name else None,
             )
         )
     return results

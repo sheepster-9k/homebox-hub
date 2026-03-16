@@ -9,7 +9,6 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import CONF_CURRENCY
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
@@ -158,7 +157,7 @@ class HomeBoxLinkedDeviceSensor(
         self._attr_unique_id = f"{ha_device_id}_homebox_link"
         self._attr_translation_key = "homebox_link"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, ha_device_id)},
+            identifiers={(DOMAIN, config_entry.entry_id)},
         )
 
     @property

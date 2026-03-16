@@ -22,3 +22,5 @@ class HomeBoxItemSummary:
     item_id: str
     name: str
     fields: list[dict[str, Any]] | None = None
+    location_id: str | None = None
+    location_name: str | None = None
