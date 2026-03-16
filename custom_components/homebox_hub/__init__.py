@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import uuid
+
 import voluptuous as vol
 
 from homeassistant.components.frontend import (
@@ -38,6 +40,17 @@ from .linking import (
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CONVERSATION]
 SERVICES: tuple[str, ...] = ("search", "get_item", "list_locations", "move_item", "get_statistics")
 _LOGGER = logging.getLogger(__name__)
+MAX_QUERY_LENGTH = 500
+
+
+def _validate_uuid(value: str) -> str:
+    """Validate that a string is a valid UUID."""
+    value = cv.string(value)
+    try:
+        uuid.UUID(value)
+    except (ValueError, AttributeError) as err:
+        raise vol.Invalid(f"Invalid UUID: {value}") from err
+    return value
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HomeBoxConfigEntry) -> bool:
@@ -253,7 +266,9 @@ async def _async_register_services(
         handle_search,
         schema=vol.Schema(
             {
-                vol.Required("query"): cv.string,
+                vol.Required("query"): vol.All(
+                    cv.string, vol.Length(min=1, max=MAX_QUERY_LENGTH)
+                ),
                 vol.Optional("config_entry_id"): cv.string,
             }
         ),
@@ -265,7 +280,7 @@ async def _async_register_services(
         handle_get_item,
         schema=vol.Schema(
             {
-                vol.Required("item_id"): cv.string,
+                vol.Required("item_id"): _validate_uuid,
                 vol.Optional("config_entry_id"): cv.string,
             }
         ),
@@ -286,8 +301,8 @@ async def _async_register_services(
         handle_move_item,
         schema=vol.Schema(
             {
-                vol.Required("item_id"): cv.string,
-                vol.Required("location_id"): cv.string,
+                vol.Required("item_id"): _validate_uuid,
+                vol.Required("location_id"): _validate_uuid,
                 vol.Optional("config_entry_id"): cv.string,
             }
         ),

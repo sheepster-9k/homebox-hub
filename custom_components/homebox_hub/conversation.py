@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 import aiohttp
@@ -38,6 +39,8 @@ _LOGGER = logging.getLogger(__name__)
 
 _THINKING_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 _LLM_TIMEOUT = aiohttp.ClientTimeout(total=120)
+_MAX_QUERY_LENGTH = 500
+_RATE_LIMIT_SECONDS = 2.0  # minimum seconds between queries
 
 _SYSTEM_PROMPT = (
     "You are a home inventory assistant connected to Homebox. "
@@ -72,6 +75,7 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
         """Initialize the conversation entity."""
         self._coordinator = coordinator
         self._config_entry = config_entry
+        self._last_query_time: float = 0.0
         self._attr_unique_id = f"{config_entry.entry_id}_conversation"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, config_entry.entry_id)},
@@ -101,6 +105,26 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
     ) -> conversation.ConversationResult:
         """Process the user's natural language query."""
         query = user_input.text
+
+        # Rate limit to prevent flooding the LLM / Homebox backend
+        now = time.monotonic()
+        if now - self._last_query_time < _RATE_LIMIT_SECONDS:
+            intent_response = conversation.IntentResponse(
+                language=user_input.language
+            )
+            intent_response.async_set_speech(
+                "Please wait a moment before sending another query."
+            )
+            return conversation.ConversationResult(
+                response=intent_response,
+                conversation_id=user_input.conversation_id,
+            )
+        self._last_query_time = now
+
+        # Truncate excessively long queries
+        if len(query) > _MAX_QUERY_LENGTH:
+            query = query[:_MAX_QUERY_LENGTH]
+
         api = self._coordinator.api
 
         # Fetch once per conversation turn, reuse for both LLM and fallback

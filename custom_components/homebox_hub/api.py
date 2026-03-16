@@ -7,8 +7,10 @@ retry with backoff, and pagination support.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 import aiohttp
 
@@ -33,6 +35,50 @@ ALLOWED_IMAGE_CONTENT_TYPES = frozenset(
 DEFAULT_PAGE_SIZE = 50
 MAX_RETRIES = 1
 RETRY_DELAY = 1.0  # seconds
+MAX_ERROR_BODY_LENGTH = 200
+
+
+def _sanitize_for_log(text: str) -> str:
+    """Remove newlines and control characters to prevent log injection."""
+    return text.replace("\n", " ").replace("\r", " ")[:500]
+
+
+def _is_private_or_loopback(hostname: str) -> bool:
+    """Return True if hostname resolves to a private, loopback, or link-local IP."""
+    try:
+        addr = ipaddress.ip_address(hostname)
+        return addr.is_private or addr.is_loopback or addr.is_link_local
+    except ValueError:
+        pass
+    # Check common private hostnames
+    lower = hostname.lower()
+    if lower in ("localhost", "localhost.localdomain"):
+        return True
+    # Hostnames ending in .local or .internal are considered private
+    if lower.endswith((".local", ".internal")):
+        return True
+    return False
+
+
+def _validate_image_url(image_url: str) -> None:
+    """Validate that an image URL does not target private/internal networks.
+
+    Raises:
+        HomeBoxInvalidImageUrlError: If the URL targets a private network.
+
+    """
+    if not image_url or not image_url.startswith(("http://", "https://")):
+        raise HomeBoxInvalidImageUrlError("Invalid image URL scheme")
+
+    parsed = urlparse(image_url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise HomeBoxInvalidImageUrlError("Image URL has no hostname")
+
+    if _is_private_or_loopback(hostname):
+        raise HomeBoxInvalidImageUrlError(
+            "Image URL must not target private or internal networks"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +205,7 @@ class HomeBoxApiClient:
                 _LOGGER.debug("Homebox authentication successful")
         except aiohttp.ClientError as err:
             raise HomeBoxConnectionError(
-                f"Cannot connect to Homebox at {self._host}: {err}"
+                "Cannot connect to Homebox server"
             ) from err
 
     # ------------------------------------------------------------------
@@ -238,12 +284,14 @@ class HomeBoxApiClient:
                     )
 
                 if resp.status == 404:
-                    raise HomeBoxApiError(f"Resource not found: {path}")
+                    raise HomeBoxApiError("Resource not found")
 
                 if not 200 <= resp.status < 300:
                     body = await resp.text()
+                    # Truncate and sanitize to avoid leaking internal details
+                    safe_body = _sanitize_for_log(body[:MAX_ERROR_BODY_LENGTH])
                     raise HomeBoxApiError(
-                        f"Homebox API error {resp.status}: {body}"
+                        f"Homebox API error {resp.status}: {safe_body}"
                     )
 
                 # Some endpoints return 204 No Content
@@ -269,7 +317,7 @@ class HomeBoxApiClient:
                     _is_retry=True,
                 )
             raise HomeBoxConnectionError(
-                f"Cannot connect to Homebox: {err}"
+                "Cannot connect to Homebox server"
             ) from err
 
     # ------------------------------------------------------------------
@@ -695,10 +743,7 @@ class HomeBoxApiClient:
             HomeBoxImageContentTypeError: If the content type is not allowed.
 
         """
-        if not image_url or not image_url.startswith(("http://", "https://")):
-            raise HomeBoxInvalidImageUrlError(
-                f"Invalid image URL: {image_url}"
-            )
+        _validate_image_url(image_url)
 
         try:
             async with self._session.get(image_url) as resp:
@@ -731,7 +776,7 @@ class HomeBoxApiClient:
 
         except aiohttp.ClientError as err:
             raise HomeBoxImageDownloadError(
-                f"Failed to download image from {image_url}: {err}"
+                "Failed to download image from provided URL"
             ) from err
 
         # Determine filename from URL
