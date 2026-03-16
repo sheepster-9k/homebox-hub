@@ -7,7 +7,10 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components.frontend import async_register_built_in_panel
+from homeassistant.components.frontend import (
+    async_register_built_in_panel,
+    async_remove_panel,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import Event, HomeAssistant, ServiceCall, SupportsResponse, callback
@@ -160,17 +163,21 @@ async def async_unload_entry(
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        # Remove panel
-        if "homebox" in hass.data.get("frontend_panels", {}):
-            hass.components.frontend.async_remove_panel("homebox")
-        # Unregister services if this is the last loaded entry
+        # Unregister services and panel if this is the last loaded entry
         remaining = [
             e for e in hass.config_entries.async_entries(DOMAIN)
             if e.entry_id != entry.entry_id and e.state is ConfigEntryState.LOADED
         ]
         if not remaining:
+            # Remove panel
+            try:
+                async_remove_panel(hass, "homebox")
+            except KeyError:
+                pass  # Panel was never registered or already removed
+            # Remove services
             for svc in ("search", "get_item", "list_locations", "move_item", "get_statistics"):
-                hass.services.async_remove(DOMAIN, svc)
+                if hass.services.has_service(DOMAIN, svc):
+                    hass.services.async_remove(DOMAIN, svc)
     return unload_ok
 
 
@@ -208,7 +215,11 @@ async def _async_register_services(
         api = _get_api_for_service(hass, call)
         query = call.data["query"]
         results = await api.async_search_items(query)
-        return {"items": [{"id": item.item_id, "name": item.name} for item in results]}
+        return {"items": [
+            {"id": item.item_id, "name": item.name,
+             "location_id": item.location_id, "location_name": item.location_name}
+            for item in results
+        ]}
 
     async def handle_get_item(call: ServiceCall) -> dict[str, Any]:
         api = _get_api_for_service(hass, call)
@@ -296,6 +307,9 @@ def _async_register_panels(
     hass: HomeAssistant, entry: HomeBoxConfigEntry
 ) -> None:
     """Register sidebar panels for Homebox."""
+    # Guard against duplicate registration from multiple config entries
+    if "homebox" in hass.data.get("frontend_panels", {}):
+        return
     homebox_url = entry.data.get(CONF_HOST, "")
     if homebox_url:
         async_register_built_in_panel(
