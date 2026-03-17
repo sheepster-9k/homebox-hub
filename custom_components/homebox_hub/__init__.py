@@ -57,8 +57,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomeBoxConfigEntry) -> b
     """Set up Homebox Hub from a config entry."""
     # Ensure link maps exist in options
     if CONF_LINKS not in entry.options:
-        hass.config_entries.async_update_entry(
-            entry,
+        entry.async_update_entry(
             options={
                 **entry.options,
                 CONF_LINKS: {
@@ -140,8 +139,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomeBoxConfigEntry) -> b
                     current_entry is not None
                     and current_entry.state is ConfigEntryState.LOADED
                 ):
-                    hass.config_entries.async_update_entry(
-                        current_entry, options=new_options
+                    current_entry.async_update_entry(
+                        options=new_options
                     )
 
         hass.async_create_task(_async_cleanup_removed_device())
@@ -190,8 +189,7 @@ async def async_unload_entry(
                 pass  # Panel was never registered or already removed
             # Remove services
             for svc in SERVICES:
-                if hass.services.has_service(DOMAIN, svc):
-                    hass.services.async_remove(DOMAIN, svc)
+                hass.services.async_remove(DOMAIN, svc)
     return unload_ok
 
 
@@ -222,9 +220,6 @@ async def _async_register_services(
     hass: HomeAssistant, entry: HomeBoxConfigEntry
 ) -> None:
     """Register Homebox Hub services."""
-    if hass.services.has_service(DOMAIN, "search"):
-        return  # Already registered
-
     async def handle_search(call: ServiceCall) -> dict[str, Any]:
         api = _get_api_for_service(hass, call)
         query = call.data["query"]
