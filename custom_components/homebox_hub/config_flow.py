@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from difflib import SequenceMatcher
 from typing import Any
 
 import voluptuous as vol
@@ -12,12 +11,11 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlowWithConfigEntry,
+    OptionsFlow,
 )
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import area_registry as ar, device_registry as dr, selector
+from homeassistant.helpers import device_registry as dr, selector
 from .api import (
     HomeBoxApiClient,
     HomeBoxApiError,
@@ -59,31 +57,6 @@ from .linking import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Fuzzy matching threshold for device-to-item suggestions
-# ---------------------------------------------------------------------------
-
-_FUZZY_MATCH_THRESHOLD = 0.5
-
-
-# ---------------------------------------------------------------------------
-# Exception classes
-# ---------------------------------------------------------------------------
-
-
-class CannotConnect(HomeAssistantError):
-    """Error to indicate we cannot connect."""
-
-
-class InvalidAuth(HomeAssistantError):
-    """Error to indicate invalid auth."""
-
-    def __init__(self, detail: str = "Unknown authentication error") -> None:
-        """Initialize with a detail message."""
-        super().__init__(detail)
-        self.detail = detail
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -194,26 +167,6 @@ def _build_item_details_schema(
     )
 
 
-def _fuzzy_best_match(
-    query: str,
-    candidates: dict[str, str],
-) -> str | None:
-    """Return the key of the best fuzzy match above the threshold, or None."""
-    best_key: str | None = None
-    best_ratio = 0.0
-    query_lower = query.lower()
-
-    for key, name in candidates.items():
-        ratio = SequenceMatcher(None, query_lower, name.lower()).ratio()
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_key = key
-
-    if best_ratio >= _FUZZY_MATCH_THRESHOLD:
-        return best_key
-    return None
-
-
 def _get_api(
     hass: Any,
     data: dict[str, Any],
@@ -313,7 +266,7 @@ class HomeBoxHubConfigFlow(ConfigFlow, domain=DOMAIN):
         config_entry: ConfigEntry,
     ) -> HomeBoxOptionsFlow:
         """Return the options flow handler."""
-        return HomeBoxOptionsFlow(config_entry)
+        return HomeBoxOptionsFlow()
 
 
 # ---------------------------------------------------------------------------
@@ -321,15 +274,11 @@ class HomeBoxHubConfigFlow(ConfigFlow, domain=DOMAIN):
 # ---------------------------------------------------------------------------
 
 
-class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
+class HomeBoxOptionsFlow(OptionsFlow):
     """Handle options for Homebox Hub."""
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        super().__init__(config_entry)
-        # Transient state for the create-item wizard
-        self._created_hb_item_id: str | None = None
-        self._selected_ha_device_id: str | None = None
+    # Transient state for the create-item wizard
+    _selected_ha_device_id: str | None = None
 
     # ------------------------------------------------------------------
     # Menu
@@ -361,15 +310,15 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
     ) -> ConfigFlowResult:
         """Configure the LLM backend for conversation agent."""
         if user_input is not None:
-            new_options = dict(self.options)
+            new_options = dict(self.config_entry.options)
             new_options[CONF_LLM_BACKEND] = user_input[CONF_LLM_BACKEND]
             new_options[CONF_LLM_URL] = user_input[CONF_LLM_URL]
             new_options[CONF_LLM_MODEL] = user_input[CONF_LLM_MODEL]
             return self.async_create_entry(title="", data=new_options)
 
-        current_backend = self.options.get(CONF_LLM_BACKEND, LLM_BACKEND_OLLAMA)
-        current_url = self.options.get(CONF_LLM_URL, DEFAULT_LLM_URL)
-        current_model = self.options.get(CONF_LLM_MODEL, DEFAULT_LLM_MODEL)
+        current_backend = self.config_entry.options.get(CONF_LLM_BACKEND, LLM_BACKEND_OLLAMA)
+        current_url = self.config_entry.options.get(CONF_LLM_URL, DEFAULT_LLM_URL)
+        current_model = self.config_entry.options.get(CONF_LLM_MODEL, DEFAULT_LLM_MODEL)
 
         schema = vol.Schema(
             {
@@ -580,7 +529,7 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
                 return self.async_create_entry(title="", data=new_options)
 
             # No changes needed — just return to the options menu
-            return self.async_create_entry(title="", data=dict(self.options))
+            return self.async_create_entry(title="", data=dict(self.config_entry.options))
 
         except HomeBoxApiError as err:
             _LOGGER.warning("API error during resync: %s", err)
@@ -656,25 +605,6 @@ class HomeBoxOptionsFlow(OptionsFlowWithConfigEntry):
             defaults[CONF_HB_ITEM_MANUFACTURER] = device.manufacturer or ""
             defaults[CONF_HB_ITEM_MODEL_NUMBER] = device.model or ""
             defaults[CONF_HB_ITEM_SERIAL_NUMBER] = device.serial_number or ""
-
-        # Try fuzzy matching against existing Homebox items for suggestions
-        try:
-            api = _get_api_from_entry(self.hass, self.config_entry)
-            await api.async_authenticate()
-            all_items = await api.async_get_all_items()
-            item_names = {item.item_id: item.name for item in all_items}
-            suggested_id = _fuzzy_best_match(
-                defaults.get(CONF_HB_ITEM_NAME, ""), item_names
-            )
-            if suggested_id is not None:
-                _LOGGER.debug(
-                    "Fuzzy match suggestion: device '%s' -> item '%s' (%s)",
-                    defaults.get(CONF_HB_ITEM_NAME),
-                    item_names.get(suggested_id),
-                    suggested_id,
-                )
-        except Exception:
-            _LOGGER.debug("Could not fetch items for fuzzy matching")
 
         return self.async_show_form(
             step_id="create_hb_item_details",
