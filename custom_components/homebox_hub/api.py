@@ -675,7 +675,7 @@ class HomeBoxApiClient:
             List of tag dicts.
 
         """
-        data = await self._request("GET", "v1/labels")
+        data = await self._request("GET", "v1/tags")
         if not isinstance(data, list):
             raise HomeBoxApiError("Invalid tags response")
         return data
@@ -690,7 +690,7 @@ class HomeBoxApiClient:
             Tag dict.
 
         """
-        data = await self._request("GET", f"v1/labels/{tag_id}")
+        data = await self._request("GET", f"v1/tags/{tag_id}")
         if not isinstance(data, dict):
             raise HomeBoxApiError(f"Invalid tag response for {tag_id}")
         return data
@@ -707,7 +707,7 @@ class HomeBoxApiClient:
             Created tag dict.
 
         """
-        data = await self._request("POST", "v1/labels", json=payload)
+        data = await self._request("POST", "v1/tags", json=payload)
         if not isinstance(data, dict):
             raise HomeBoxApiError("Invalid create-tag response")
         return data
@@ -719,7 +719,7 @@ class HomeBoxApiClient:
             tag_id: The Homebox tag UUID.
 
         """
-        await self._request("DELETE", f"v1/labels/{tag_id}")
+        await self._request("DELETE", f"v1/tags/{tag_id}")
 
     async def async_ensure_tag(self, tag_name: str) -> dict[str, Any]:
         """Return an existing tag by name, creating it if necessary.
