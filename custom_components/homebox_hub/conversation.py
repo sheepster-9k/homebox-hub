@@ -18,12 +18,14 @@ from typing import Any
 import aiohttp
 
 from homeassistant.components import conversation
+from homeassistant.components.conversation import ChatLog
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import intent
 
 from .const import (
     DOMAIN,
@@ -97,20 +99,21 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
         return self._config_entry.options.get(CONF_LLM_MODEL, DEFAULT_LLM_MODEL)
 
     # ------------------------------------------------------------------
-    # Conversation handling
+    # Conversation handling (modern HA 2025.12+ API)
     # ------------------------------------------------------------------
 
-    async def async_process(
+    async def _async_handle_message(
         self,
         user_input: conversation.ConversationInput,
+        chat_log: ChatLog,
     ) -> conversation.ConversationResult:
-        """Process the user's natural language query."""
+        """Handle the user's natural language query."""
         query = user_input.text
 
         # Rate limit to prevent flooding the LLM / Homebox backend
         now = time.monotonic()
         if now - self._last_query_time < _RATE_LIMIT_SECONDS:
-            intent_response = conversation.IntentResponse(
+            intent_response = intent.IntentResponse(
                 language=user_input.language
             )
             intent_response.async_set_speech(
@@ -118,7 +121,7 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
             )
             return conversation.ConversationResult(
                 response=intent_response,
-                conversation_id=user_input.conversation_id,
+                conversation_id=chat_log.conversation_id,
             )
         self._last_query_time = now
 
@@ -155,12 +158,12 @@ class HomeBoxConversationEntity(conversation.ConversationEntity):
             # Reuse already-fetched data instead of re-fetching
             response_text = _keyword_response(matched, len(all_items), len(locations))
 
-        intent_response = conversation.IntentResponse(language=user_input.language)
+        intent_response = intent.IntentResponse(language=user_input.language)
         intent_response.async_set_speech(response_text)
 
         return conversation.ConversationResult(
             response=intent_response,
-            conversation_id=user_input.conversation_id,
+            conversation_id=chat_log.conversation_id,
         )
 
     # ------------------------------------------------------------------
